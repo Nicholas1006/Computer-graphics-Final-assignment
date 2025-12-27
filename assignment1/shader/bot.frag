@@ -1,33 +1,31 @@
 #version 330 core
 
+// Input from vertex shader
 in vec3 worldPosition;
 in vec3 worldNormal;
+in vec2 uv;
 
-out vec3 finalColor;
+// Output color
+out vec4 color;
 
+// Lighting uniforms
 uniform vec3 lightPosition;
 uniform vec3 lightIntensity;
 
 void main() {
-    // DEBUG: Solid color for testing
-    // finalColor = vec3(1.0, 0.0, 0.0); // Red
-    // return;
+    // Simple Lambertian shading
+    vec3 N = normalize(worldNormal);
+    vec3 L = normalize(lightPosition - worldPosition);
     
-    // Simple lighting
-    vec3 lightDir = normalize(lightPosition - worldPosition);
-    float diff = max(dot(normalize(worldNormal), lightDir), 0.0);
+    // Diffuse lighting
+    float diffuse = max(dot(N, L), 0.0);
     
-    // Base color (robot material)
-    vec3 baseColor = vec3(0.8, 0.3, 0.3); // Reddish
-    
-    // Ambient + diffuse
-    vec3 ambient = vec3(0.2, 0.2, 0.2);
-    vec3 diffuse = diff * lightIntensity * 0.000001 * baseColor;
-    
-    vec3 result = ambient + diffuse;
+    // Calculate color (you can add texture sampling here)
+    vec3 materialColor = vec3(0.8, 0.8, 0.8); // Gray material
+    vec3 finalColor = materialColor * lightIntensity * diffuse;
     
     // Gamma correction
-    result = pow(result, vec3(1.0/2.2));
+    finalColor = pow(finalColor, vec3(1.0/2.2));
     
-    finalColor = result;
+    color = vec4(finalColor, 1.0);
 }
