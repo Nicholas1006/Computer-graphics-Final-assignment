@@ -43,7 +43,7 @@ static float lastY = windowHeight / 2.0f;
 static glm::vec3 cameraPos = glm::vec3(0.0f, 100.0f, 500.0f);  // Increased height and distance
 static glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 static glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
-static float cameraSpeed = 100.0f;
+static float cameraSpeed = 500.0f;
 static float yaw = -90.0f;
 static float pitch = -10.0f;  // Looking slightly down
 static float FoV = 45.0f;
@@ -670,7 +670,7 @@ struct MyBot {
 	glm::vec3 getForwardDirection() const {
 		// In OpenGL, negative Z is typically "forward" (into the screen)
 		// So we use negative Z as our base forward direction
-		glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, -1.0f);
+		glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, 1.0f);
 		
 		// Rotate the base forward by current yaw
 		glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), currentYaw, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1393,18 +1393,26 @@ void processInput(GLFWwindow* window, float deltaTime) {
     // Movement
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS){
         cameraPos += cameraSpeed * deltaTime * cameraFront;
-        //bot.moveForward(50.0f * deltaTime); // Move bot forward
     }
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS){
         cameraPos -= cameraSpeed * deltaTime * cameraFront;
-        //bot.moveForward(-50.0f * deltaTime); // Move bot backward
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS){
-        //cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
-        bot.rotateYaw(-0.5f * deltaTime); // Rotate bot left
+        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
     }
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS){
-        //cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
+        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
+    }
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS){
+        bot.moveForward(cameraSpeed * deltaTime);
+    }
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS){
+        bot.moveForward(-cameraSpeed * deltaTime);
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS){
+        bot.rotateYaw(-0.5f * deltaTime); // Rotate bot left
+    }
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS){
         bot.rotateYaw(0.5f * deltaTime); // Rotate bot right
     }
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
