@@ -57,7 +57,6 @@ static glm::vec3 lightPosition(0.0f, 500.0f, 0.0f);
 // Animation
 static bool playAnimation = true;
 static float playbackSpeed = 1.0f;
-
 // ====================
 // FUNCTION DECLARATIONS
 // ====================
@@ -254,6 +253,11 @@ struct MyBot {
 	GLuint programID;
     glm::vec3 lightPosition;
     glm::vec3 lightIntensity;
+    
+    // Bot transformation
+    float currentYaw;  // Horizontal rotation in radians
+    glm::vec3 position; // Position in world space
+    glm::vec3 modelCenterOffset; // Offset to move the bot's visual center to its logical position
 
 	tinygltf::Model model;
 
@@ -597,7 +601,6 @@ struct MyBot {
 		updateAnimation(model, anim, animationObject, time, nodeTransforms);
 		
 		// MAKE THE BOT WALK STRAIGHT INSTEAD OF IN A CIRCLE
-		// Find the root joint (hip bone) - usually the first joint
 		if (!model.skins.empty()) {
 			const tinygltf::Skin& skin = model.skins[0];
 			if (!skin.joints.empty()) {
@@ -618,7 +621,6 @@ struct MyBot {
 				// Keep the original Y (vertical) movement
 				glm::vec3 straightTranslation(0.0f, translation.y, forwardDistance);
 				
-				// Remove any rotation from the root to keep it facing forward
 				// Extract scale if any
 				glm::vec3 scale = glm::vec3(
 					glm::length(glm::vec3(rootTransform[0])),
@@ -626,8 +628,8 @@ struct MyBot {
 					glm::length(glm::vec3(rootTransform[2]))
 				);
 				
-				// Reconstruct root transform with only forward translation and scale
-				// No rotation to keep it facing forward
+				// Remove rotation from the root (we'll apply it in render)
+				// Just keep translation and scale for now
 				nodeTransforms[rootJointIndex] = glm::translate(glm::mat4(1.0f), straightTranslation) * 
 												glm::scale(glm::mat4(1.0f), scale);
 			}
@@ -646,6 +648,68 @@ struct MyBot {
 		
 		// Update skinning with global transforms
 		updateSkinning(globalNodeTransforms);
+	}
+
+	// Function to rotate the bot horizontally
+	void rotateYaw(float angleRadians) {
+		currentYaw += angleRadians;
+		// Keep the angle normalized between 0 and 2π
+		while (currentYaw > 2 * 3.14159265359f) currentYaw -= 2 * 3.14159265359f;
+		while (currentYaw < 0) currentYaw += 2 * 3.14159265359f;
+	}
+	
+	// Function to set the bot's yaw rotation
+	void setYaw(float angleRadians) {
+		currentYaw = angleRadians;
+		// Keep the angle normalized between 0 and 2π
+		while (currentYaw > 2 * 3.14159265359f) currentYaw -= 2 * 3.14159265359f;
+		while (currentYaw < 0) currentYaw += 2 * 3.14159265359f;
+	}
+	
+	// Function to get the bot's forward direction (based on current yaw)
+	glm::vec3 getForwardDirection() const {
+		// In OpenGL, negative Z is typically "forward" (into the screen)
+		// So we use negative Z as our base forward direction
+		glm::vec3 baseForward = glm::vec3(0.0f, 0.0f, -1.0f);
+		
+		// Rotate the base forward by current yaw
+		glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), currentYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+		return glm::vec3(rotation * glm::vec4(baseForward, 0.0f));
+	}
+	
+	// Function to get the bot's right direction (based on current yaw)
+	glm::vec3 getRightDirection() const {
+		// Right is perpendicular to forward
+		glm::vec3 forward = getForwardDirection();
+		// Cross with up (0,1,0) to get right
+		return glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+	}
+	
+	// Function to move the bot forward/backward based on its current orientation
+	void moveForward(float distance) {
+		glm::vec3 forward = getForwardDirection();
+		position += forward * distance;
+	}
+	
+	// Function to move the bot sideways (strafe)
+	void moveRight(float distance) {
+		glm::vec3 right = getRightDirection();
+		position += right * distance;
+	}
+	
+	// Function to set the bot's position
+	void setPosition(const glm::vec3& newPosition) {
+		position = newPosition;
+	}
+	
+	// Function to get the bot's current position
+	glm::vec3 getPosition() const {
+		return position;
+	}
+	
+	// Function to get the bot's current yaw
+	float getYaw() const {
+		return currentYaw;
 	}
 
 	bool loadModel(tinygltf::Model &model, const char *filename) {
@@ -674,6 +738,15 @@ struct MyBot {
 		// Initialize light
 		lightPosition = glm::vec3(0.0f, 10.0f, 0.0f);
 		lightIntensity = glm::vec3(1.0f, 1.0f, 1.0f);
+		
+		// Initialize bot transformation
+		currentYaw = 0.0f;
+		position = glm::vec3(0.0f, 0.0f, 0.0f);
+		
+		// Adjust this offset based on your bot model
+		// This moves the visual center to where the logical center should be
+		// You may need to tweak these values
+		modelCenterOffset = glm::vec3(0.0f, 0.0f, -100.0f); // Start with no offset
 
 		// Load model
 		if (!loadModel(model, "../assignment1/model/bot/bot.gltf")) {
@@ -861,8 +934,17 @@ struct MyBot {
 	void render(glm::mat4 cameraMatrix) {
 		glUseProgram(programID);
 		
-		// Set camera
-		glm::mat4 mvp = cameraMatrix;
+		// Create model matrix for the bot with proper pivot adjustment
+		// Order: 
+		// 1. Start at position (world space)
+		// 2. Apply yaw rotation around the bot's center
+		// 3. Apply offset to move visual center to logical center
+		glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), position) * 
+							   glm::rotate(glm::mat4(1.0f), currentYaw, glm::vec3(0.0f, 1.0f, 0.0f)) *
+							   glm::translate(glm::mat4(1.0f), modelCenterOffset);
+		
+		// Apply the bot's model matrix to the camera matrix
+		glm::mat4 mvp = cameraMatrix * modelMatrix;
 		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
 		// Set joint matrices if available
@@ -892,8 +974,7 @@ struct MyBot {
 		glDeleteProgram(programID);
 	}
 };
-
-
+static MyBot bot;
 // ====================
 // SIMPLE GROUND
 // ====================
@@ -1207,7 +1288,6 @@ int main(void) {
     // Initialize test objects
     TestCube testCube;
     SimpleGround ground;
-    MyBot bot;
     
     std::cout << "=== Initializing Test Scene ===" << std::endl;
     testCube.initialize();
@@ -1311,14 +1391,22 @@ int main(void) {
 // ====================
 void processInput(GLFWwindow* window, float deltaTime) {
     // Movement
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS){
         cameraPos += cameraSpeed * deltaTime * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        //bot.moveForward(50.0f * deltaTime); // Move bot forward
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS){
         cameraPos -= cameraSpeed * deltaTime * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
+        //bot.moveForward(-50.0f * deltaTime); // Move bot backward
+    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS){
+        //cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
+        bot.rotateYaw(-0.5f * deltaTime); // Rotate bot left
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS){
+        //cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed * deltaTime;
+        bot.rotateYaw(0.5f * deltaTime); // Rotate bot right
+    }
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
         cameraPos.y -= cameraSpeed * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
