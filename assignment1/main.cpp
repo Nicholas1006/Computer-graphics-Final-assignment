@@ -107,6 +107,19 @@ int abs(int x) {
 	}
 }
 
+
+float normalizeAngle(float angle) {
+    while (angle > M_PI) angle -= 2 * M_PI;
+    while (angle <= -M_PI) angle += 2 * M_PI;
+    return angle;
+}
+
+// Helper function to get shortest angular difference (with direction)
+float angularDifference(float from, float to) {
+    float diff = to - from;
+    return normalizeAngle(diff);
+}
+
 // ====================
 // SIMPLE SHADER CREATION
 // ====================
@@ -308,6 +321,7 @@ struct MyBot {
     // Bot transformation
     float currentYaw;  // Horizontal rotation in radians
     float visualAdditionalYaw;
+    float visualAdditionalYawGoal;
     float currentPitch; // Vertical rotation in radians (limited)
     glm::vec3 position; // Position in world space
     glm::vec3 modelCenterOffset; // Offset to move the bot's visual center to its logical position
@@ -642,8 +656,26 @@ struct MyBot {
 		}
 	}
 
+    
+
 	void update(float time) {
-		if (model.animations.empty() || animationObjects.empty()) return;
+        if(playAnimation){
+
+            float diff = angularDifference(visualAdditionalYaw, visualAdditionalYawGoal);
+            float step = 0.001f;
+    
+            if (fabs(diff) < step) {
+                visualAdditionalYaw = visualAdditionalYawGoal;
+            } else {
+                // Move in the direction of the shortest path
+                visualAdditionalYaw += (diff > 0 ? step : -step);
+            }
+    
+            // Normalize the final angle
+            visualAdditionalYaw = normalizeAngle(visualAdditionalYaw);
+            std::cout << "visualAdditionalYaw: " << visualAdditionalYaw << std::endl;
+        }
+        if (model.animations.empty() || animationObjects.empty()) return;
 		
 		// Initialize node transforms with identity
 		std::vector<glm::mat4> nodeTransforms(model.nodes.size(), glm::mat4(1.0f));
@@ -724,7 +756,7 @@ struct MyBot {
 	}
 
     void setfaceDirection(float angleRadians) {
-        visualAdditionalYaw = angleRadians;
+        visualAdditionalYawGoal = angleRadians;
     }
 	
 	// Function to get the bot's forward direction (based on current yaw)
