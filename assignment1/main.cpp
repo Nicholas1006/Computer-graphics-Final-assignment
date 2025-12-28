@@ -137,6 +137,13 @@ float angularDifference(float from, float to) {
     return normalizeAngle(diff);
 }
 
+
+
+glm::vec3 getCameraPosition(const glm::mat4& viewMatrix) {
+    // Camera position is the inverse of the view matrix translation
+    glm::mat4 invView = glm::inverse(viewMatrix);
+    return glm::vec3(invView[3]);
+}
 // ====================
 // SIMPLE SHADER CREATION
 // ====================
@@ -349,6 +356,310 @@ glm::mat4 getThirdPersonViewMatrix() {
     
     return glm::lookAt(cameraPos, cameraTarget, cameraUp);
 }
+
+
+// Add to your main.cpp near other structs
+struct InstancedFlowers {
+    GLuint vao, vbo, ebo;
+    GLuint instanceVBO;
+    GLuint shader;
+    GLuint texture;
+    
+    struct FlowerInstance {
+        glm::vec3 position;
+        float growth;      // 0.0 (not grown) to 1.0 (fully grown)
+        float maxGrowth;   // Random final size (0.5 to 1.5)
+        float growthSpeed; // How fast it grows (0.1 to 0.5)
+    };
+    
+    std::vector<FlowerInstance> flowers;
+    int instanceCount;
+    
+    void initialize(int count = 5000) {
+        std::cout << "Initializing instanced flowers..." << std::endl;
+        
+        // Create simple quad vertices (billboard)
+        float vertices[] = {
+            // positions   // texCoords
+            -1.0f, 0.0f, 0.0f,   0.0f, 0.0f,
+             1.0f, 0.0f, 0.0f,   1.0f, 0.0f,
+             1.0f, 2.0f, 0.0f,   1.0f, 1.0f,
+            -1.0f, 2.0f, 0.0f,   0.0f, 1.0f
+        };
+        
+        unsigned int indices[] = {
+            0, 1, 2,
+            0, 2, 3
+        };
+        
+        // Create VAO/VBO
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glGenBuffers(1, &ebo);
+        
+        glBindVertexArray(vao);
+        
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+        
+        // Position attribute (location 0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        
+        // Texture coordinate attribute (location 1)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        
+        // Generate random flower positions
+        instanceCount = count;
+        flowers.resize(instanceCount);
+        
+        std::srand(static_cast<unsigned>(std::time(nullptr)));
+        for (int i = 0; i < instanceCount; i++) {
+            flowers[i].position = glm::vec3(
+                2500.0f - (std::rand() % 5000),  // X: -5000 to 5000
+                0.0f,                            // Y: ground level
+                2500.0f - (std::rand() % 5000)   // Z: -5000 to 5000
+            );
+            
+            flowers[i].growth = 0.0f;  // Start not grown
+            flowers[i].maxGrowth = 1.0f + (std::rand() % 100) / 100.0f;  // 1.0 to 2.0
+            flowers[i].growthSpeed = 1;
+        }
+        
+        // Create instance VBO
+        glGenBuffers(1, &instanceVBO);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+        
+        // Initial upload of instance data
+        uploadInstanceData();
+        
+        // Instance position attribute (location 2, 3, 4 for position + growth)
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(2);
+        glVertexAttribDivisor(2, 1);  // Tell OpenGL this changes per instance
+        
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 
+                            (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribDivisor(3, 1);
+        
+        glBindVertexArray(0);
+        
+        // Create shader for instanced flowers
+        const char* vertexShader = R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec2 aTexCoord;
+        layout(location = 2) in vec3 aInstancePos;
+        layout(location = 3) in float aGrowth;
+        
+        out vec2 TexCoord;
+        out float Growth;
+        
+        uniform mat4 VP;
+        uniform vec3 cameraPos;
+        
+        void main() {
+            Growth = aGrowth;
+            
+            // SPHERICAL BILLBOARDING - Always face camera
+            vec3 pos = aInstancePos;
+            
+            // Calculate look direction from flower to camera
+            vec3 look = normalize(cameraPos - aInstancePos);
+            vec3 up = vec3(0.0, 1.0, 0.0);
+            
+            // Calculate right vector (perpendicular to look and world up)
+            vec3 right = normalize(cross(up, look));
+            
+            // Recalculate up vector to be perpendicular to look and right
+            vec3 billboardUp = normalize(cross(look, right));
+            
+            // Apply the billboard transformation
+            // The quad's X axis uses right vector, Y axis uses billboardUp
+            pos += right * aPos.x * aGrowth * 5.0;
+            pos += billboardUp * aPos.y * aGrowth * 5.0;
+            
+            gl_Position = VP * vec4(pos, 1.0);
+            TexCoord = aTexCoord;
+        }
+    )";
+        
+        const char* fragmentShader = R"(
+            #version 330 core
+            in vec2 TexCoord;
+            in float Growth;
+            out vec4 FragColor;
+            
+            uniform sampler2D flowerTexture;
+            
+            void main() {
+                vec4 texColor = texture(flowerTexture, TexCoord);
+                
+                // ALPHA TESTING - discard completely transparent fragments
+                if (texColor.a < 0.1)
+                    discard;
+                    
+                // Simple growth fade
+                float alpha = texColor.a * Growth;
+                
+                // Discard if too transparent (helps with depth issues)
+                if (alpha < 0.3)
+                    discard;
+                
+                // Color based on growth
+                FragColor = vec4(texColor.rgb * (0.8 + 0.2 * Growth), alpha);
+            }
+        )";
+        
+        // Compile shader
+        GLuint vertShader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertShader, 1, &vertexShader, NULL);
+        glCompileShader(vertShader);
+        
+        GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragShader, 1, &fragmentShader, NULL);
+        glCompileShader(fragShader);
+        
+        shader = glCreateProgram();
+        glAttachShader(shader, vertShader);
+        glAttachShader(shader, fragShader);
+        glLinkProgram(shader);
+        
+        glDeleteShader(vertShader);
+        glDeleteShader(fragShader);
+        
+        // Load flower texture
+        texture = loadFlowerTexture();
+        
+        std::cout << "Flowers initialized: " << instanceCount << " instances" << std::endl;
+    }
+    
+    GLuint loadFlowerTexture() {
+        int width, height, channels;
+        unsigned char* data = stbi_load("../assignment1/model/flower/flower.png", 
+                                       &width, &height, &channels, 4); // Load with alpha
+        
+        GLuint tex;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        
+        std::cout << "Loaded flower texture: " << width << "x" << height 
+                    << ", channels: " << channels << std::endl;
+        
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, 
+                    GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        
+        // Set texture parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        
+        stbi_image_free(data);
+        return tex;
+    }
+    
+    void uploadInstanceData() {
+        // Pack instance data into a buffer
+        std::vector<float> instanceData;
+        instanceData.reserve(instanceCount * 4); // pos(xyz) + growth
+        
+        for (const auto& flower : flowers) {
+            instanceData.push_back(flower.position.x);
+            instanceData.push_back(flower.position.y);
+            instanceData.push_back(flower.position.z);
+            instanceData.push_back(flower.growth);
+        }
+        
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+        glBufferData(GL_ARRAY_BUFFER, instanceData.size() * sizeof(float), 
+                    instanceData.data(), GL_DYNAMIC_DRAW);
+    }
+    
+    void update(float deltaTime, const glm::vec3& botPosition) {
+        // Update growth based on distance to bot
+        for (auto& flower : flowers) {
+            float distance = glm::distance(flower.position, botPosition);
+            
+            // If bot is within 100 units, start growing
+            if (distance < 100.0f) {
+                
+                // Growth speed increases as bot gets closer
+                float proximityFactor = 1.0f - (distance / 100.0f);
+                float growthRate = flower.growthSpeed * proximityFactor * 2.0f;
+                
+                // Grow the flower
+                flower.growth += growthRate * deltaTime;
+                if (flower.growth > flower.maxGrowth) {
+                    flower.growth = flower.maxGrowth;
+                }
+            } 
+            else if (distance > 2500.0f) {
+                //If the bot is far away, move in front of it and reset growth
+                if(flower.position.z - botPosition.z > 2500.0f) {
+                    flower.position.z = flower.position.z - 5000.0f;
+                    flower.growth = 0.0f;
+                }
+                else if(flower.position.z - botPosition.z < -2500.0f) {
+                    flower.position.z = flower.position.z + 5000.0f;
+                    flower.growth = 0.0f;
+                }
+                else if(flower.position.x - botPosition.x > 2500.0f) {
+                    flower.position.x = flower.position.x - 5000.0f;
+                    flower.growth = 0.0f;
+                }
+                else if(flower.position.x - botPosition.x < -2500.0f) {
+                    flower.position.x = flower.position.x + 5000.0f;
+                    flower.growth = 0.0f;
+                }
+
+            }
+        }
+        
+        // Update GPU buffer with new growth values
+        uploadInstanceData();
+    }
+    
+    void render(const glm::mat4& viewProj, const glm::vec3& cameraPos) {
+        glUseProgram(shader);
+        
+        // Set uniforms
+        glUniformMatrix4fv(glGetUniformLocation(shader, "VP"), 1, 
+                        GL_FALSE, glm::value_ptr(viewProj));
+        glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, 
+                    glm::value_ptr(cameraPos));
+        
+        // Bind texture
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glUniform1i(glGetUniformLocation(shader, "flowerTexture"), 0);
+        
+        // NO BLENDING NEEDED - we're using alpha testing
+        // Just enable depth testing
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        
+        // Draw all instances
+        glBindVertexArray(vao);
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, instanceCount);
+        glBindVertexArray(0);
+    }
+    
+    void cleanup() {
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+        glDeleteBuffers(1, &ebo);
+        glDeleteBuffers(1, &instanceVBO);
+        glDeleteTextures(1, &texture);
+        glDeleteProgram(shader);
+    }
+};
 
 struct MyBot {
 	// Shader variable IDs
@@ -702,7 +1013,6 @@ struct MyBot {
     void updateLightPosition(){
         glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), (+visualAdditionalYaw - currentYaw), glm::vec3(0.0f, 1.0f, 0.0f));
         lightPosition = glm::vec3(glm::inverse(rotation) * glm::vec4(lightSource, 1.0f));
-        std::cout << "Light position: " << lightPosition.x << ", " << lightPosition.y << ", " << lightPosition.z << ", " << rotation[0][0] << ", " << rotation[1][0] << ", " << rotation[2][0] << std::endl;
     }
 
 	void update(float time) {
@@ -1724,8 +2034,10 @@ int main(void) {
     TestCube testCube;
     SimpleGround ground;
     SkyBox skybox;
+    InstancedFlowers flowers;
     
     std::cout << "=== Initializing Third-Person View ===" << std::endl;
+    flowers.initialize(500000);
     testCube.initialize();
     ground.initialize();
     bot.initialize();
@@ -1779,6 +2091,7 @@ int main(void) {
         bot.update(time);
         ground.update(bot.getPosition());
         skybox.update(bot.getPosition());
+        flowers.update(deltaTime, bot.getPosition());
 
         // Camera matrices
         glm::mat4 projection = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
@@ -1792,6 +2105,8 @@ int main(void) {
         bot.render(viewProj);
         ground.render(viewProj);
         testCube.render(viewProj);
+        glm::vec3 cameraPos = getCameraPosition(view); // You'll need to extract this from your view matrix
+        flowers.render(viewProj,cameraPos);
         // FPS tracking
         frames++;
         fTime += deltaTime;
