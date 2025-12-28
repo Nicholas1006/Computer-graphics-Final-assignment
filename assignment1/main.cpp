@@ -64,6 +64,11 @@ static float playbackSpeed = 1.0f;
 // Camera control flags
 static bool cameraFollowBot = true;  // Toggle for camera following bot
 
+
+glm::float32 FoV = 45;
+glm::float32 zNear = 0.1f; 
+glm::float32 zFar = 10000.0f;
+
 // ====================
 // FUNCTION DECLARATIONS
 // ====================
@@ -1520,7 +1525,7 @@ struct SkyBox {
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_buffer_data), index_buffer_data, GL_STATIC_DRAW);
 
 		// Create and compile our GLSL program from the shaders
-		programID = LoadShadersFromFile("../lab2/box.vert", "../lab2/box.frag");
+		programID = LoadShadersFromFile("../assignment1/shader/box.vert", "../assignment1/shader/box.frag");
 		if (programID == 0)
 		{
 			std::cerr << "Failed to load shaders." << std::endl;
@@ -1530,10 +1535,7 @@ struct SkyBox {
 		mvpMatrixID = glGetUniformLocation(programID, "MVP");
 
         // Load a texture 
-        //this->textureID = LoadSkyBoxTexture("../lab2/sky.png");
-        //this->textureID = LoadSkyBoxTexture("../lab2/sky_debug.png");
-        this->textureID = LoadSkyBoxTexture("../assignment1/model/sky/sky.png");
-        //this->textureID = LoadSkyBoxTexture("../lab2/studio_garden_debug.png");
+        this->textureID = LoadSkyBoxTexture("../assignment1/model/skybox/sky.png");
 
         // Get a handle for our "textureSampler" uniform
 		textureSamplerID = glGetUniformLocation(programID,"textureSampler");
@@ -1542,6 +1544,8 @@ struct SkyBox {
 	void render(glm::mat4 cameraMatrix) {
 		glUseProgram(programID);
 
+        GLboolean prevCullFace = glIsEnabled(GL_CULL_FACE);
+    
         glDepthMask(GL_FALSE);
         glDisable(GL_CULL_FACE);
 
@@ -1578,6 +1582,7 @@ struct SkyBox {
 		glUniform1i(textureSamplerID, 0); 
 
 		// Draw the box
+        glBindVertexArray(vertexArrayID);
 		glDrawElements(
 			GL_TRIANGLES,      // mode
 			36,    			   // number of indices
@@ -1585,12 +1590,16 @@ struct SkyBox {
 			(void*)0           // element array buffer offset
 		);
 
+        glBindVertexArray(0);
+
 		glDisableVertexAttribArray(0);
 		glDisableVertexAttribArray(1);
         //glDisableVertexAttribArray(2);
 
 		glDepthMask(GL_TRUE);
-		glEnable(GL_CULL_FACE);
+        if(prevCullFace){
+            glEnable(GL_CULL_FACE);
+        }
 
 	}
 
@@ -1731,9 +1740,7 @@ int main(void) {
         bot.update(time);
 
         // Camera matrices
-        glm::mat4 projection = glm::perspective(glm::radians(45.0f), 
-                                               (float)windowWidth / windowHeight, 
-                                               0.1f, 5000.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
         
         // Use third-person view matrix
         glm::mat4 view = getThirdPersonViewMatrix();
