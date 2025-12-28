@@ -19,6 +19,17 @@ void main() {
     
     // Diffuse lighting
     float diffuse = max(dot(N, L), 0.0);
+
+    //toon shading
+    if(diffuse > 0.66){
+        diffuse = 0.99;
+    }
+    else if(diffuse > 0.33){
+        diffuse = 0.5;
+    }
+    else{
+        diffuse = 0.01;
+    }
     
     // Calculate color
     vec3 materialColor = vec3(0.8, 0.8, 0.8);
