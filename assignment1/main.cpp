@@ -585,10 +585,11 @@ struct InstancedFlowers {
     void update(float deltaTime, const glm::vec3& botPosition) {
         // Update growth based on distance to bot
         for (auto& flower : flowers) {
+            //float distance = abs(flower.position.x - botPosition.x) + abs(flower.position.z - botPosition.z);
             float distance = glm::distance(flower.position, botPosition);
             
             // If bot is within 100 units, start growing
-            if (distance < 100.0f) {
+            if (distance < 100.0f && flower.growth < flower.maxGrowth) {
                 
                 // Growth speed increases as bot gets closer
                 float proximityFactor = 1.0f - (distance / 100.0f);
@@ -618,7 +619,6 @@ struct InstancedFlowers {
                     flower.position.x = flower.position.x + 5000.0f;
                     flower.growth = 0.0f;
                 }
-
             }
         }
         
@@ -1015,12 +1015,12 @@ struct MyBot {
         lightPosition = glm::vec3(glm::inverse(rotation) * glm::vec4(lightSource, 1.0f));
     }
 
-	void update(float time) {
+	void update(float deltaTime,float time) {
         updateLightPosition();
         if(playAnimation){
 
             float diff = angularDifference(visualAdditionalYaw, visualAdditionalYawGoal);
-            float step = 0.001f;
+            float step = 1.0f * deltaTime;
     
             if (fabs(diff) < step) {
                 visualAdditionalYaw = visualAdditionalYawGoal;
@@ -2088,7 +2088,7 @@ int main(void) {
             else
     			time += deltaTime * playbackSpeed;
             }
-        bot.update(time);
+        bot.update(deltaTime,time);
         ground.update(bot.getPosition());
         skybox.update(bot.getPosition());
         flowers.update(deltaTime, bot.getPosition());
