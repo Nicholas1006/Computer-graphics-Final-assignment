@@ -54,7 +54,8 @@ static float botPitch = 0.0f; // Bot pitch (for looking up/down, limited)
 
 // Lighting
 static glm::vec3 lightIntensity(5e6f, 5e6f, 5e6f);
-static glm::vec3 lightPosition(0.0f, 500.0f, 0.0f);
+static glm::vec3 lightSource(-1000.0f, 1000.0f, -1000.0f);
+static glm::vec3 lightPosition(-1000.0f, 1000.0f, -1000.0f);
 
 // Animation
 static bool playAnimation = true;
@@ -698,8 +699,14 @@ struct MyBot {
 	}
 
     
+    void updateLightPosition(){
+        glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), (+visualAdditionalYaw - currentYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+        lightPosition = glm::vec3(glm::inverse(rotation) * glm::vec4(lightSource, 1.0f));
+        std::cout << "Light position: " << lightPosition.x << ", " << lightPosition.y << ", " << lightPosition.z << ", " << rotation[0][0] << ", " << rotation[1][0] << ", " << rotation[2][0] << std::endl;
+    }
 
 	void update(float time) {
+        updateLightPosition();
         if(playAnimation){
 
             float diff = angularDifference(visualAdditionalYaw, visualAdditionalYawGoal);
@@ -872,8 +879,8 @@ struct MyBot {
 
 	void initialize() {
 		// Initialize light
-		lightPosition = glm::vec3(0.0f, 10.0f, 0.0f);
-		lightIntensity = glm::vec3(1.0f, 1.0f, 1.0f);
+		lightPosition = glm::vec3(-1000.0f, 1000.0f, -1000.0f);
+        lightIntensity = glm::vec3(1.0f, 1.0f, 1.0f);
 		
 		// Initialize bot transformation
 		currentYaw = 0.0f;
@@ -1070,7 +1077,7 @@ struct MyBot {
 		for (size_t i = 0; i < scene.nodes.size(); ++i) {
 			drawModelNodes(primitiveObjects, model, model.nodes[scene.nodes[i]]);
 		}
-	}
+    }
 
 	void render(glm::mat4 cameraMatrix) {
 		glUseProgram(programID);
@@ -1568,6 +1575,11 @@ struct SkyBox {
 		textureSamplerID = glGetUniformLocation(programID,"textureSampler");
 	}
 
+    void update(const glm::vec3& botPosition){
+        position.x = botPosition.x;
+        position.z = botPosition.z;
+    }
+
 	void render(glm::mat4 cameraMatrix) {
 		glUseProgram(programID);
 
@@ -1766,6 +1778,7 @@ int main(void) {
             }
         bot.update(time);
         ground.update(bot.getPosition());
+        skybox.update(bot.getPosition());
 
         // Camera matrices
         glm::mat4 projection = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
