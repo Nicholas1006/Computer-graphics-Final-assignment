@@ -229,89 +229,6 @@ static GLuint LoadSkyBoxTexture(const char *texture_file_path) {
     return texture;
 }
 
-// ====================
-// TEST CUBE
-// ====================
-struct TestCube {
-    GLuint vao, vbo, ebo;
-    GLuint shader;
-    int indexCount;
-    
-    void initialize() {
-        std::cout << "Initializing test cube..." << std::endl;
-        
-        // Cube vertices
-        float vertices[] = {
-            // positions
-            -50.0f, -50.0f, -50.0f,
-             50.0f, -50.0f, -50.0f,
-             50.0f,  50.0f, -50.0f,
-            -50.0f,  50.0f, -50.0f,
-            -50.0f, -50.0f,  50.0f,
-             50.0f, -50.0f,  50.0f,
-             50.0f,  50.0f,  50.0f,
-            -50.0f,  50.0f,  50.0f
-        };
-        
-        // Cube indices
-        unsigned int indices[] = {
-            0, 1, 2, 2, 3, 0,
-            4, 5, 6, 6, 7, 4,
-            0, 4, 7, 7, 3, 0,
-            1, 5, 6, 6, 2, 1,
-            3, 2, 6, 6, 7, 3,
-            0, 1, 5, 5, 4, 0
-        };
-        
-        indexCount = 36;
-        
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &vbo);
-        glGenBuffers(1, &ebo);
-        
-        glBindVertexArray(vao);
-        
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-        
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-        
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-        
-        glBindVertexArray(0);
-        
-        // Create simple shader
-        shader = createSimpleShader();
-        std::cout << "Test cube shader ID: " << shader << std::endl;
-    }
-    
-    void render(const glm::mat4& viewProj) {
-        if (!renderRobot) return;
-        glUseProgram(shader);
-        
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 100.0f, 0.0f));
-        glm::mat4 mvp = viewProj * model;
-        
-        GLuint mvpLoc = glGetUniformLocation(shader, "MVP");
-        if (mvpLoc != -1) {
-            glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-        }
-        
-        glBindVertexArray(vao);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-    }
-    
-    void cleanup() {
-        glDeleteVertexArrays(1, &vao);
-        glDeleteBuffers(1, &vbo);
-        glDeleteBuffers(1, &ebo);
-        glDeleteProgram(shader);
-    }
-};
-
 // Function to update camera position based on bot position and camera angles
 void updateCameraPosition() {
     // Calculate camera offset from bot
@@ -944,7 +861,7 @@ struct MyBot {
         if(playAnimation){
 
             float diff = angularDifference(visualAdditionalYaw, visualAdditionalYawGoal);
-            float step = 1.0f * deltaTime;
+            float step = 3.0f * deltaTime;
     
             if (fabs(diff) < step) {
                 visualAdditionalYaw = visualAdditionalYawGoal;
@@ -1896,14 +1813,12 @@ int main(void) {
     glDisable(GL_CULL_FACE); // Disable culling for debugging
 
     // Initialize test objects
-    TestCube testCube;
     SimpleGround ground;
     SkyBox skybox;
     InstancedFlowers flowers;
     
     std::cout << "=== Initializing Third-Person View ===" << std::endl;
     flowers.initialize(500000);
-    testCube.initialize();
     ground.initialize();
     bot.initialize();
     skybox.initialize(glm::vec3(0,0,0), glm::vec3(5000,5000,5000));
@@ -1969,7 +1884,6 @@ int main(void) {
         skybox.render(viewProj);
         bot.render(viewProj);
         ground.render(viewProj);
-        testCube.render(viewProj);
         glm::vec3 cameraPos = getCameraPosition(view); // You'll need to extract this from your view matrix
         flowers.render(viewProj,cameraPos);
         // FPS tracking
@@ -1999,7 +1913,6 @@ int main(void) {
 
     // Cleanup
 	bot.cleanup();
-    testCube.cleanup();
     ground.cleanup();
     skybox.cleanup();
 
